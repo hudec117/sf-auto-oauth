@@ -16,7 +16,7 @@ You need 2-3 things when authenticating using the OAuth flow:
 
 * Username: When a sandbox is refreshed/created, all the usernames are modified to ensure global uniqueness. This is predictable.
 * Password: When a sandbox is refreshed/created, all the users are copied over and so are their passwords. So if you have a service account (e.g. admin user to perform CI/CD) in prod, it's password will remain the same in all sandboxes.
-* Sandbox domain: If you have MyDomain enabled this is predictable as it will consist of your org name and the sandbox name. If you don't have MyDomain enabled it will be test.salesforce.com.
+* Sandbox instance URL: If you have MyDomain enabled this is predictable as it will consist of your org name and the sandbox name. If you don't have MyDomain enabled it will be test.salesforce.com.
 
 This API accepts the above 3 either as query parameters or as environment variables.
 
@@ -29,7 +29,7 @@ Once the API has all 3 of the above, it does the following:
 2. Starts Selenium and navigates to the authorization URL.
 3. Fills in the username/password on the page using Selenium and clicks Login.
 4. Uses the same `WebOAuthServer` to create an HTTP server on the callback URL and captures the OAuth response.
-5. Constructs an SFDX Auth URL and send it back.
+5. Sends back authentication information.
 
 ### Don't you need a connected app for the OAuth flow?
 
@@ -56,31 +56,48 @@ As sandboxes are created/refreshed they will take these trusted IP ranges with t
 
 ### Environment Variables
 
+1. TODO
 
-
-<!-- 3. (optionally) Configure your cloud to inject secrets as environment variables.
-    * SF_USERNAME
-    * SF_PASSWORD (recommended)
-    * SF_DOMAIN -->
 
 ## Usage
 
-`GET /sfdxauthurl?username=[USERNAME]&password=[PASSWORD]&domain=[DOMAIN]`
+URL: `POST /auth`
 
-Any of the parameters can be omitted provided an environment variable is configured as described in the Setup section. For example, if you only want to specify the username and domain:
+Body:
+```json
+{
+    "username": "",
+    "password": "",
+    "instanceUrl": ""
+}
+```
 
-`GET /sfdxauthurl?username=[USERNAME]&domain=[PASSWORD]`
+Any of the fields can be omitted provided an environment variable is configured as described in the Setup section. For example, if you only want to specify the username and instance URL:
 
-the API will search for the SF_PASSWORD environment variable. Same applies to omitting the other parameters.
+```json
+{
+    "username": "",
+    "instanceUrl": ""
+}
+```
+
+the API will search for the SF_PASSWORD environment variable instead. Same applies to omitting the other parameters.
 
 Example response:
 ```json
 {
-	"success": true,
-	"sfdxAuthUrl": "[SFDX AUTH URL]"
+    "success": true,
+    "auth": {
+        "orgId": "[ORG ID]",
+        "accessToken": "[ACCESS TOKEN]",
+        "refreshToken": "[REFRESH TOKEN]",
+        "sfdxAuthUrl": "[SFDX AUTH URL]"
+    }
 }
 ```
 
 where `[SFDX AUTH URL]` is in this format: `force://<clientId>:<clientSecret>:<refreshToken>@<instanceUrl>`
 
 This can be saved to a file and used with the `sf org login sfdx-url` [command](https://developer.salesforce.com/docs/atlas.en-us.sfdx_cli_reference.meta/sfdx_cli_reference/cli_reference_org_commands_unified.htm#cli_reference_org_login_sfdx-url_unified) to authenticate SFDX against a sandbox. Or you can extract the refresh token and do as you wish.
+
+## Security

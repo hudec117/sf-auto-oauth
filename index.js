@@ -3,6 +3,7 @@ import { Builder, Browser, By, until } from 'selenium-webdriver';
 import { TimeoutError, WebDriverError } from 'selenium-webdriver/lib/error.js';
 import { Options } from 'selenium-webdriver/chrome.js';
 import express from 'express';
+import winston from 'winston';
 import * as dotenv from 'dotenv';
 
 // Resources
@@ -12,9 +13,22 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-const app = express();
+// Setup logging
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL ?? 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.Console()
+  ]
+});
 
-app.get('/auth', async (req, res) => {
+const app = express();
+app.use(express.json());
+
+app.post('/auth', async (req, res) => {
   let username, password, instanceUrl;
 
   // IMPORTANT: Check process.env for environment variables
@@ -22,8 +36,10 @@ app.get('/auth', async (req, res) => {
   // to "override" the values set in the environment variables.
   if ('SF_USERNAME' in process.env) {
     username = process.env.SF_USERNAME;
-  } else if ('username' in req.query) {
-    username = req.query.username;
+    logger.info('Got username from environment variable');
+  } else if ('username' in req.body) {
+    username = req.body.username;
+    logger.info('Got username from body');
   } else {
     sendFailure(res, 400, 'Missing username.');
     return;
@@ -31,8 +47,10 @@ app.get('/auth', async (req, res) => {
 
   if ('SF_PASSWORD' in process.env) {
     password = process.env.SF_PASSWORD;
-  } else if ('password' in req.query) {
-    password = req.query.password;
+    logger.info('Got password from environment variable');
+  } else if ('password' in req.body) {
+    password = req.body.password;
+    logger.info('Got password from body');
   } else {
     sendFailure(res, 400, 'Missing password.');
     return;
@@ -40,8 +58,10 @@ app.get('/auth', async (req, res) => {
 
   if ('SF_INSTANCE_URL' in process.env) {
     instanceUrl = process.env.SF_INSTANCE_URL;
-  } else if ('instanceUrl' in req.query) {
-    instanceUrl = req.query.instanceUrl;
+    logger.info('Got instance URL from environment variable');
+  } else if ('instanceUrl' in req.body) {
+    instanceUrl = req.body.instanceUrl;
+    logger.info('Got instance URL from body');
   } else {
     sendFailure(res, 400, 'Missing instance URL.');
     return;
@@ -50,23 +70,28 @@ app.get('/auth', async (req, res) => {
   // Extra validation to make sure the instance URL is valid.
   const result = sanitiseInstanceUrl(instanceUrl);
   if (!result.valid) {
+    logger.error(`Received invalid instance URL ${instanceUrl}`);
     sendFailure(res, 400, 'Invalid instance URL.');
     return;
   }
   instanceUrl = result.url;
 
+  logger.info('Authenticating using Selenium and Chrome...');
+
   // Prepare Selenium Chrome driver.
   const chromeOptions = new Options().headless();
   chromeOptions.addArguments('--no-sandbox');
   chromeOptions.addArguments('--disable-dev-shm-usage');
+  chromeOptions.excludeSwitches(['enable-logging']);
 
-  let driver;
+  let chromeDriver;
   try {
-    driver = await new Builder()
+    chromeDriver = await new Builder()
       .forBrowser(Browser.CHROME)
       .setChromeOptions(chromeOptions)
       .build();
   } catch (error) {
+    logger.error(error.message);
     sendFailure(res, 500, 'Failed to build Selenium Chrome instance.');
     return;
   }
@@ -87,25 +112,25 @@ app.get('/auth', async (req, res) => {
 
     // Navigate to the OAuth authorization URL
     const authUrl = oauthServer.getAuthorizationUrl();
-    await driver.get(authUrl);
+    await chromeDriver.get(authUrl);
 
     // Enter the username, password and click login.
-    await driver.findElement(By.id('username')).sendKeys(username);
-    await driver.findElement(By.id('password')).sendKeys(password);
+    await chromeDriver.findElement(By.id('username')).sendKeys(username);
+    await chromeDriver.findElement(By.id('password')).sendKeys(password);
 
-    await driver.findElement(By.id('Login')).click();
+    await chromeDriver.findElement(By.id('Login')).click();
 
-    // Wait for up to 2 seconds to find the "Approve" button if we
+    // Wait for up to 5 seconds to find the "Approve" button if we
     // are redirected to the ConnectedApp's Reject/Approve page.
     try {
-      await driver.wait(until.elementLocated(By.id('oaapprove')), 2000);
+      await chromeDriver.wait(until.elementLocated(By.id('oaapprove')), 5000);
 
-      console.log('Redirected to Reject/Approve page...');
+      logger.info('Redirected to Reject/Approve page');
 
-      await driver.findElement(By.id('oaapprove')).click();
+      await chromeDriver.findElement(By.id('oaapprove')).click();
     } catch (error) {
       if (error instanceof TimeoutError) {
-        console.log('No "Approve" button found, assuming no approval required...');
+        logger.info('No "Approve" button found, assuming no approval required');
       } else {
         sendFailure(res, 500, error);
         return;
@@ -118,6 +143,8 @@ app.get('/auth', async (req, res) => {
     const fields = authInfo.getFields(true);
     const sfdxAuthUrl = authInfo.getSfdxAuthUrl();
 
+    logger.info(`Successfully authenticated against org ${fields.orgId}`);
+
     sendSuccess(res, {
       orgId: fields.orgId,
       accessToken: fields.accessToken,
@@ -125,13 +152,14 @@ app.get('/auth', async (req, res) => {
       sfdxAuthUrl: sfdxAuthUrl
     });
   } catch (error) {
+    logger.error(error.message);
     if (error instanceof WebDriverError) {
       sendFailure(res, 500, error.message);
     } else {
       sendFailure(res, 500, error);
     }
   } finally {
-    await driver.quit();
+    await chromeDriver.quit();
   }
 });
 
@@ -167,7 +195,17 @@ function sendFailure(res, statusCode, error) {
   });
 }
 
+async function onExit() {
+  logger.info('Received SIGINT/SIGTERM');
+
+  logger.info('Exiting');
+  process.exit();
+}
+
 const port = parseInt(process.env.PORT);
 app.listen(port, () => {
-  console.log(`Listening on port ${port}`)
+  logger.info(`Listening on port ${port}`)
 });
+
+process.on('SIGINT', onExit);
+process.on('SIGTERM', onExit);
