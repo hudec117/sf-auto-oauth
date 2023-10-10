@@ -34,6 +34,8 @@ app.post('/auth', async (req, res) => {
   // IMPORTANT: Check process.env for environment variables
   // first as we don't want to give the caller the ability
   // to "override" the values set in the environment variables.
+
+  // Username
   if ('SF_USERNAME' in process.env) {
     username = process.env.SF_USERNAME;
     logger.info('Got username from environment variable');
@@ -45,6 +47,14 @@ app.post('/auth', async (req, res) => {
     return;
   }
 
+  username = username.trim();
+  if (username.length === 0) {
+    sendFailure(res, 400, 'Username cannot be empty.');
+    return;
+  }
+
+
+  // Password
   if ('SF_PASSWORD' in process.env) {
     password = process.env.SF_PASSWORD;
     logger.info('Got password from environment variable');
@@ -56,6 +66,13 @@ app.post('/auth', async (req, res) => {
     return;
   }
 
+  if (password.length === 0) {
+    sendFailure(res, 400, 'Password cannot be empty.');
+    return;
+  }
+
+
+  // Instance URL
   if ('SF_INSTANCE_URL' in process.env) {
     instanceUrl = process.env.SF_INSTANCE_URL;
     logger.info('Got instance URL from environment variable');
@@ -64,6 +81,12 @@ app.post('/auth', async (req, res) => {
     logger.info('Got instance URL from body');
   } else {
     sendFailure(res, 400, 'Missing instance URL.');
+    return;
+  }
+
+  instanceUrl = instanceUrl.trim();
+  if (instanceUrl.length === 0) {
+    sendFailure(res, 400, 'Instance URL cannot be empty.');
     return;
   }
 
@@ -106,7 +129,7 @@ app.post('/auth', async (req, res) => {
 
     // The "authorizeAndSave" function starts the HTTP server
     // listening on the ConnectedApp callback URL, we need to start
-    // it here so when the browser is redirected to the callback URL
+    // it here so when the browser is redirected to the callback URL,
     // there is a server waiting to process the request.
     const authAndSaveProm = oauthServer.authorizeAndSave();
 
@@ -120,10 +143,30 @@ app.post('/auth', async (req, res) => {
 
     await chromeDriver.findElement(By.id('Login')).click();
 
-    // Wait for up to 5 seconds to find the "Approve" button if we
+    // TODO: handle incorrect username/password scenario
+
+    // Wait for up to 4 seconds to find the login error message
+    try {
+      await chromeDriver.wait(until.elementLocated(By.id('error')), 4000);
+
+      logger.info('Error message found, login failed.');
+
+      sendFailure(res, 401, 'Please check your username and password.');
+      return;
+    } catch (error) {
+      if (error instanceof TimeoutError) {
+        // Expected, happy path!
+        logger.info('No error message after 5 seconds, assuming login successful...');
+      } else {
+        sendFailure(res, 500, error);
+        return;
+      }
+    }
+
+    // Wait for up to 4 seconds to find the "Approve" button if we
     // are redirected to the ConnectedApp's Reject/Approve page.
     try {
-      await chromeDriver.wait(until.elementLocated(By.id('oaapprove')), 5000);
+      await chromeDriver.wait(until.elementLocated(By.id('oaapprove')), 4000);
 
       logger.info('Redirected to Reject/Approve page');
 
@@ -145,6 +188,10 @@ app.post('/auth', async (req, res) => {
 
     logger.info(`Successfully authenticated against org ${fields.orgId}`);
 
+    // Note: may not be necessary since the Salesforce code does this too in the Promise's finally() method
+    // but it's important so ports are not reused.
+    oauthServer.webServer.close();
+
     sendSuccess(res, {
       orgId: fields.orgId,
       accessToken: fields.accessToken,
@@ -164,8 +211,6 @@ app.post('/auth', async (req, res) => {
 });
 
 function sanitiseInstanceUrl(instanceUrl) {
-  instanceUrl = instanceUrl.trim();
-
   if (instanceUrl.startsWith('http://')) {
     instanceUrl = instanceUrl.replace('http://', 'https://')
   } else if (!instanceUrl.startsWith('https://')) {

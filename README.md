@@ -37,15 +37,9 @@ Yes! But all environments have a hidden connected app that SFDX uses for the OAu
 
 ## Setup
 
-### Standalone
-
-1. TODO
-
-
 ### Docker
 
 1. Use Docker to build an image using the Dockerfile.
-    * Note: the Dockerfile downloads the latest version of Chrome but the Selenium Chrome Driver version is fixed. You may need to update the Chrome Driver version manually. (if it starts to break)
 2. Deploy to the cloud (tested on GCP's Cloud Run)
 
 ### Trusted IP Ranges
