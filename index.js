@@ -43,12 +43,14 @@ app.post('/auth', async (req, res) => {
     username = req.body.username;
     logger.info('Got username from body');
   } else {
+    logger.info('Username not found in environment variable or HTTP body.');
     sendFailure(res, 400, 'Missing username.');
     return;
   }
 
   username = username.trim();
   if (username.length === 0) {
+    logger.info('Username is only whitespace or empty.');
     sendFailure(res, 400, 'Username cannot be empty.');
     return;
   }
@@ -62,11 +64,13 @@ app.post('/auth', async (req, res) => {
     password = req.body.password;
     logger.info('Got password from body');
   } else {
+    logger.info('Password not found in environment variable or HTTP body.');
     sendFailure(res, 400, 'Missing password.');
     return;
   }
 
   if (password.length === 0) {
+    logger.info('Password is empty.');
     sendFailure(res, 400, 'Password cannot be empty.');
     return;
   }
@@ -80,12 +84,14 @@ app.post('/auth', async (req, res) => {
     instanceUrl = req.body.instanceUrl;
     logger.info('Got instance URL from body');
   } else {
+    logger.info('Instance URL not found in environment variable or HTTP body.');
     sendFailure(res, 400, 'Missing instance URL.');
     return;
   }
 
   instanceUrl = instanceUrl.trim();
   if (instanceUrl.length === 0) {
+    logger.info('Instance URL is empty.');
     sendFailure(res, 400, 'Instance URL cannot be empty.');
     return;
   }
@@ -93,7 +99,7 @@ app.post('/auth', async (req, res) => {
   // Extra validation to make sure the instance URL is valid.
   const result = sanitiseInstanceUrl(instanceUrl);
   if (!result.valid) {
-    logger.error(`Received invalid instance URL ${instanceUrl}`);
+    logger.warning(`Received invalid instance URL ${instanceUrl}`);
     sendFailure(res, 400, 'Invalid instance URL.');
     return;
   }
@@ -119,9 +125,10 @@ app.post('/auth', async (req, res) => {
     return;
   }
 
+  let oauthServer;
   try {
     // Start the Salesforce OAuth Server to receive the OAuth response.
-    const oauthServer = await WebOAuthServer.create({
+    oauthServer = await WebOAuthServer.create({
       oauthConfig: {
         loginUrl: instanceUrl
       }
@@ -140,23 +147,19 @@ app.post('/auth', async (req, res) => {
     // Enter the username, password and click login.
     await chromeDriver.findElement(By.id('username')).sendKeys(username);
     await chromeDriver.findElement(By.id('password')).sendKeys(password);
-
     await chromeDriver.findElement(By.id('Login')).click();
-
-    // TODO: handle incorrect username/password scenario
 
     // Wait for up to 4 seconds to find the login error message
     try {
       await chromeDriver.wait(until.elementLocated(By.id('error')), 4000);
 
       logger.info('Error message found, login failed.');
-
       sendFailure(res, 401, 'Please check your username and password.');
       return;
     } catch (error) {
       if (error instanceof TimeoutError) {
         // Expected, happy path!
-        logger.info('No error message after 5 seconds, assuming login successful...');
+        logger.info('No error message after 5 seconds, assuming login successful.');
       } else {
         sendFailure(res, 500, error);
         return;
@@ -168,12 +171,12 @@ app.post('/auth', async (req, res) => {
     try {
       await chromeDriver.wait(until.elementLocated(By.id('oaapprove')), 4000);
 
-      logger.info('Redirected to Reject/Approve page');
+      logger.info('Redirected to Reject/Approve page, approving.');
 
       await chromeDriver.findElement(By.id('oaapprove')).click();
     } catch (error) {
       if (error instanceof TimeoutError) {
-        logger.info('No "Approve" button found, assuming no approval required');
+        logger.info('No "Approve" button found, assuming no approval required.');
       } else {
         sendFailure(res, 500, error);
         return;
@@ -187,10 +190,6 @@ app.post('/auth', async (req, res) => {
     const sfdxAuthUrl = authInfo.getSfdxAuthUrl();
 
     logger.info(`Successfully authenticated against org ${fields.orgId}`);
-
-    // Note: may not be necessary since the Salesforce code does this too in the Promise's finally() method
-    // but it's important so ports are not reused.
-    oauthServer.webServer.close();
 
     sendSuccess(res, {
       orgId: fields.orgId,
@@ -206,6 +205,10 @@ app.post('/auth', async (req, res) => {
       sendFailure(res, 500, error);
     }
   } finally {
+    // Note: may not be necessary since the Salesforce code does this too in the Promise's finally() method
+    // but it's important so the webserver is not kept open on a port.
+    oauthServer.webServer.close();
+
     await chromeDriver.quit();
   }
 });
