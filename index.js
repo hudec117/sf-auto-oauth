@@ -1,3 +1,26 @@
+// sf-auto-oauth
+// Copyright (C) 2023 Aurel Hudec
+
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+console.log(`
+sf-auto-oauth
+Copyright (C) 2023 Aurel Hudec
+This program comes with ABSOLUTELY NO WARRANTY.
+This is free software, and you are welcome to redistribute it under certain conditions; see LICENSE
+`);
+
 import { WebOAuthServer } from '@salesforce/core';
 import { Builder, Browser, By, until } from 'selenium-webdriver';
 import { TimeoutError, WebDriverError } from 'selenium-webdriver/lib/error.js';
@@ -105,6 +128,7 @@ app.post('/auth', async (req, res) => {
   }
   instanceUrl = result.url;
 
+
   logger.info('Authenticating using Selenium and Chrome...');
 
   // Prepare Selenium Chrome driver.
@@ -159,7 +183,7 @@ app.post('/auth', async (req, res) => {
     } catch (error) {
       if (error instanceof TimeoutError) {
         // Expected, happy path!
-        logger.info('No error message after 5 seconds, assuming login successful.');
+        logger.info('No error message after 4 seconds, assuming login successful.');
       } else {
         sendFailure(res, 500, error);
         return;
@@ -176,7 +200,7 @@ app.post('/auth', async (req, res) => {
       await chromeDriver.findElement(By.id('oaapprove')).click();
     } catch (error) {
       if (error instanceof TimeoutError) {
-        logger.info('No "Approve" button found, assuming no approval required.');
+        logger.info('No "Approve" button after 4 seconds, assuming no approval required.');
       } else {
         sendFailure(res, 500, error);
         return;

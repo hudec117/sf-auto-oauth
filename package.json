@@ -1,12 +1,12 @@
 {
   "name": "sf-auto-oauth",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "main": "index.js",
   "scripts": {
     "docker-build": "docker build . --tag sf-auto-oauth"
   },
   "author": "Aurel Hudec",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "type": "module",
   "dependencies": {
     "@salesforce/core": "^5.3.9",
