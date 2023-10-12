@@ -26,6 +26,7 @@ import { Builder, Browser, By, until } from 'selenium-webdriver';
 import { TimeoutError, WebDriverError } from 'selenium-webdriver/lib/error.js';
 import { Options } from 'selenium-webdriver/chrome.js';
 import express from 'express';
+import { rateLimit } from 'express-rate-limit'
 import winston from 'winston';
 import * as dotenv from 'dotenv';
 
@@ -48,7 +49,14 @@ const logger = winston.createLogger({
   ]
 });
 
+// Max of 2 requests per 15 seconds
+const limiter = rateLimit({
+  windowMs: 15 * 1000,
+  max: 2,
+});
+
 const app = express();
+app.use(limiter);
 app.use(express.json());
 
 app.post('/auth', async (req, res) => {
