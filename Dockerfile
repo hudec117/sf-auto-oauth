@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM ubuntu:22.10
+FROM ubuntu:22.04
 
 # Install node
 # Reference: https://github.com/nodesource/distributions#debian-and-ubuntu-based-distributions
